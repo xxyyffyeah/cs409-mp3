@@ -179,12 +179,6 @@ module.exports = function (router) {
         const tasksToRemove = oldTaskIds.filter(id => !newTaskIds.includes(id));
         const tasksToAdd = newTaskIds.filter(id => !oldTaskIds.includes(id));
 
-        // Remove fields that shouldn't be updated
-        // delete req.body._id;
-        // delete req.body.dateCreated;
-        // delete req.body.createdAt;
-        // delete req.body.updatedAt;
-        // delete req.body.__v;
 
         // Update pendingTasks with the processed array
         req.body.pendingTasks = newTaskIds;
