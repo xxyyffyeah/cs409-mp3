@@ -8,18 +8,27 @@ module.exports = function (router) {
 
     tasksRoute.get(async (req, res) => {
         const query = Task.find();
-        if (req.query['where']) {
-            const where = JSON.parse(req.query['where']);
-            query.where(where);
+
+        try {
+            if (req.query['where']) {
+                const where = JSON.parse(req.query['where']);
+                query.where(where);
+            }
+            if (req.query['sort']) {
+                const sort = JSON.parse(req.query['sort']);
+                query.sort(sort);
+            }
+            if (req.query['select']) {
+                const select = JSON.parse(req.query['select']);
+                query.select(select);
+            }
+        } catch (err) {
+            return res.status(400).json({
+                message: "Invalid JSON in query parameters",
+                data: null
+            });
         }
-        if (req.query['sort']) {
-            const sort = JSON.parse(req.query['sort']);
-            query.sort(sort);
-        }
-        if (req.query['select']) {
-            const select = JSON.parse(req.query['select']);
-            query.select(select);
-        }
+
         if (req.query['skip']) {
             const skip = parseInt(req.query['skip']);
             query.skip(skip);
@@ -66,7 +75,20 @@ module.exports = function (router) {
             return res.status(400).json({ message: err.message, data: null });
         }
         try {
-            await newtask.save();
+            const session = await mongoose.startSession();
+            await session.withTransaction(async () => {
+                await newtask.save({ session });
+
+                // Add task to user's pendingTasks if assigned
+                if (newtask.assignedUser && newtask.completed === false) {
+                    await User.updateOne(
+                        { _id: newtask.assignedUser },
+                        { $addToSet: { pendingTasks: newtask._id } },
+                        { session }
+                    );
+                }
+            });
+            await session.endSession();
         } catch (err) {
             return res.status(500).json({ message: err.message, data: null });
         }
@@ -80,18 +102,26 @@ module.exports = function (router) {
         const taskID = req.params.task_id;
         const query = Task.findById(taskID);
 
-        if (req.query['where']) {
-            const where = JSON.parse(req.query['where']);
-            query.where(where);
+        try {
+            if (req.query['where']) {
+                const where = JSON.parse(req.query['where']);
+                query.where(where);
+            }
+            if (req.query['sort']) {
+                const sort = JSON.parse(req.query['sort']);
+                query.sort(sort);
+            }
+            if (req.query['select']) {
+                const select = JSON.parse(req.query['select']);
+                query.select(select);
+            }
+        } catch (err) {
+            return res.status(400).json({
+                message: "Invalid JSON in query parameters",
+                data: null
+            });
         }
-        if (req.query['sort']) {
-            const sort = JSON.parse(req.query['sort']);
-            query.sort(sort);
-        }
-        if (req.query['select']) {
-            const select = JSON.parse(req.query['select']);
-            query.select(select);
-        }
+
         if (req.query['skip']) {
             const skip = parseInt(req.query['skip']);
             query.skip(skip);
@@ -153,7 +183,9 @@ module.exports = function (router) {
         }
 
         const oldUserId = task.assignedUser;
-        const newUserId = newTaskData.assignedUser; 
+        const oldCompleted = task.completed;
+        const newUserId = newTaskData.assignedUser;
+        const newCompleted = newTaskData.completed !== undefined ? newTaskData.completed : oldCompleted;
 
         Object.assign(task, req.body);
         const err = task.validateSync();
@@ -163,19 +195,24 @@ module.exports = function (router) {
         try {
             const session = await mongoose.startSession();
             await session.withTransaction(async () => {
-                
+
                 await task.save({ session });
 
-                if (String(oldUserId) !== String(newUserId)) {
-                    
-                    if (oldUserId) {
+                // Handle user assignment changes or completed status changes
+                const userChanged = String(oldUserId) !== String(newUserId);
+                const completedChanged = oldCompleted !== newCompleted;
+
+                if (userChanged || completedChanged) {
+                    // Remove from old user if user changed or task became completed
+                    if (oldUserId && (userChanged || newCompleted)) {
                         await User.updateOne(
                             { _id: oldUserId },
                             { $pull: { pendingTasks: task._id } },
                             { session }
                         );
                     }
-                    if (newUserId) {
+                    // Add to new user if user changed or task became incomplete
+                    if (newUserId && !newCompleted && (userChanged || !oldCompleted)) {
                         await User.updateOne(
                             { _id: newUserId },
                             { $addToSet: { pendingTasks: task._id } },

@@ -8,18 +8,27 @@ module.exports = function (router) {
 
     usersRoute.get(async (req, res) => {
         const query = User.find();
-        if (req.query['where']) {
-            const where = JSON.parse(req.query['where']);
-            query.where(where);
+
+        try {
+            if (req.query['where']) {
+                const where = JSON.parse(req.query['where']);
+                query.where(where);
+            }
+            if (req.query['sort']) {
+                const sort = JSON.parse(req.query['sort']);
+                query.sort(sort);
+            }
+            if (req.query['select']) {
+                const select = JSON.parse(req.query['select']);
+                query.select(select);
+            }
+        } catch (err) {
+            return res.status(400).json({
+                message: "Invalid JSON in query parameters",
+                data: null
+            });
         }
-        if (req.query['sort']) {
-            const sort = JSON.parse(req.query['sort']);
-            query.sort(sort);
-        }
-        if (req.query['select']) {
-            const select = JSON.parse(req.query['select']);
-            query.select(select);
-        }
+
         if (req.query['skip']) {
             const skip = parseInt(req.query['skip']);
             query.skip(skip);
@@ -62,6 +71,13 @@ module.exports = function (router) {
         try {
             await newUser.save();
         } catch (err) {
+            // Handle duplicate email error
+            if (err.code === 11000 && err.keyPattern && err.keyPattern.email) {
+                return res.status(400).json({
+                    message: "A user with this email already exists",
+                    data: null
+                });
+            }
             return res.status(500).json({ message: err.message, data: null });
         }
         res.status(201).json({
@@ -74,18 +90,26 @@ module.exports = function (router) {
         const userID = req.params.user_id;
         const query = User.findById(userID);
 
-        if (req.query['where']) {
-            const where = JSON.parse(req.query['where']);
-            query.where(where);
+        try {
+            if (req.query['where']) {
+                const where = JSON.parse(req.query['where']);
+                query.where(where);
+            }
+            if (req.query['sort']) {
+                const sort = JSON.parse(req.query['sort']);
+                query.sort(sort);
+            }
+            if (req.query['select']) {
+                const select = JSON.parse(req.query['select']);
+                query.select(select);
+            }
+        } catch (err) {
+            return res.status(400).json({
+                message: "Invalid JSON in query parameters",
+                data: null
+            });
         }
-        if (req.query['sort']) {
-            const sort = JSON.parse(req.query['sort']);
-            query.sort(sort);
-        }
-        if (req.query['select']) {
-            const select = JSON.parse(req.query['select']);
-            query.select(select);
-        }
+
         if (req.query['skip']) {
             const skip = parseInt(req.query['skip']);
             query.skip(skip);
@@ -220,7 +244,7 @@ module.exports = function (router) {
                 if (pendingTaskIds && pendingTaskIds.length > 0) {
                     await Task.updateMany(
                         { _id: { $in: pendingTaskIds } },
-                        { $set: { assignedUser: "", assignedUserName: "unassigned" } },
+                        { $set: { assignedUser: null, assignedUserName: "unassigned" } },
                         { session }
                     );
                 }
